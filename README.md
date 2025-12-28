@@ -30,7 +30,7 @@ It allows users to discover movies based on **movie similarity**, **genre prefer
 ## **Dataset**
 
 - Source: TMDB 5000 Movies Dataset (from Kaggle)  
-- Columns used: `title`, `overview`, `genres`, `homepage`  
+- Columns used: `title`, `overview`, `genres`, `companies' , 'release date' , 'runtime' , 'average ratings' 
 - Preprocessed to remove unnecessary columns and duplicates.
 
 ---
