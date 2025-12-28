@@ -1,153 +1,183 @@
 import streamlit as st
 import pandas as pd
 import random
+import ast
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from PIL import Image
-import ast
 
-#PAGE TITLE
-st.set_page_config(page_title="Movie Recommendation System", layout="wide")
+#PAGE NAME
+st.set_page_config(
+    page_title="Movie Recommendation System",
+    layout="wide"
+)
 
-#DATA FROM CSV
+#GET DATA FROM CSV FILE
 @st.cache_data
 def load_data():
     movies = pd.read_csv("movies.csv")
-    movies = movies[['title', 'overview', 'genres',
-                     'production_companies', 'release_date', 'runtime', 'vote_average']]
+    movies = movies[
+        [
+            'title', 'overview', 'genres',
+            'production_companies', 'release_date',
+            'runtime', 'vote_average'
+        ]
+    ]
     movies.dropna(subset=['title', 'overview'], inplace=True)
     movies.reset_index(drop=True, inplace=True)
     return movies
 
-#PROCESSING GENRE
+#GENRES
 def preprocess_genres(movies):
-    def parse_genres(genres_str):
+    def parse_genres(x):
         try:
-            genres_list = ast.literal_eval(genres_str)
-            names = [g['name'] for g in genres_list]
-            return "|".join(names)
+            g = ast.literal_eval(x)
+            return "|".join([i['name'] for i in g])
         except:
             return ""
     movies['genres'] = movies['genres'].apply(parse_genres)
     return movies
 
+#COMPANIES
+def preprocess_companies(movies):
+    def parse_companies(x):
+        try:
+            c = ast.literal_eval(x)
+            return ", ".join([i['name'] for i in c])
+        except:
+            return "N/A"
+    movies['production_companies'] = movies['production_companies'].apply(parse_companies)
+    return movies
+
 movies = load_data()
 movies = preprocess_genres(movies)
+movies = preprocess_companies(movies)
 
-#FINDING RECOMENDATION KEYWORDS
+#RECOMENDATION KEYWORDS
 @st.cache_resource
-def build_similarity(movies):
-    tfidf = TfidfVectorizer(stop_words='english', max_features=5000)
-    vectors = tfidf.fit_transform(movies['overview'])
-    similarity = cosine_similarity(vectors)
-    return similarity
+def build_similarity(data):
+    tfidf = TfidfVectorizer(stop_words="english", max_features=5000)
+    vectors = tfidf.fit_transform(data['overview'])
+    return cosine_similarity(vectors)
 
 similarity = build_similarity(movies)
 
-#RECOMEND BY TITLE / GENRE
+#BY TITLE OR GENRE
 def recommend_by_movie(movie_name, n):
-    index = movies[movies['title'] == movie_name].index[0]
-    distances = similarity[index]
-    movie_list = sorted(list(enumerate(distances)), reverse=True, key=lambda x: x[1])[1:n+1]
-    return [
-        {
-            'title': movies.iloc[i[0]].title,
-            'genres': movies.iloc[i[0]].genres,
-            'overview': movies.iloc[i[0]].overview,
-            'production_companies': movies.iloc[i[0]].production_companies,
-            'release_date': movies.iloc[i[0]].release_date,
-            'runtime': movies.iloc[i[0]].runtime,
-            'vote_average': movies.iloc[i[0]].vote_average
-        }
-        for i in movie_list
-    ]
+    idx = movies[movies['title'] == movie_name].index[0]
+    scores = similarity[idx]
+    movies_list = sorted(list(enumerate(scores)), key=lambda x: x[1], reverse=True)[1:n+1]
+    return movies.iloc[[i[0] for i in movies_list]]
 
 def recommend_by_genre(genre, n):
-    genre_movies = movies[movies['genres'].str.contains(genre, case=False)]
-    return [
-        {
-            'title': row['title'],
-            'genres': row['genres'],
-            'overview': row['overview'],
-            'production_companies': row['production_companies'],
-            'release_date': row['release_date'],
-            'runtime': row['runtime'],
-            'vote_average': row['vote_average']
-        }
-        for i, row in genre_movies.head(n).iterrows()
-    ]
+    return movies[movies['genres'].str.contains(genre, case=False)].head(n)
+
+#RATINGS
+def render_stars(vote):
+    if pd.isna(vote):
+        return "⭐ N/A"
+    stars = round(vote / 2)
+    return "⭐" * stars + f" ({vote}/10)"
+
+#MOVIE DATA
+def movie_card(movie):
+    st.markdown(
+        f"""
+        <div style="
+            background-color:#111;
+            padding:20px;
+            border-radius:15px;
+            margin-bottom:20px;
+            box-shadow:0 4px 10px rgba(0,0,0,0.4);
+        ">
+            <h3 style="color:#ffcc00;">🎬 {movie['title']}</h3>
+            <p><b>Genres:</b> {movie['genres']}</p>
+            <p><b>Overview:</b> {movie['overview']}</p>
+            <p><b>Production:</b> {movie['production_companies']}</p>
+            <p><b>Release:</b> {movie['release_date']}</p>
+            <p><b>Runtime:</b> {movie['runtime']} mins</p>
+            <p><b>Rating:</b> {render_stars(movie['vote_average'])}</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 #PAGE HEADING
-st.markdown("<h1 style='text-align:center;'>Movie Recommendation System</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center; font-size:18px;'>We recomend similar movies by title, genre, or are you ready for a surprise pick now!!!</p>", unsafe_allow_html=True)
+st.markdown(
+    "<h1 style='text-align:center;'> Movie Recommendation System</h1>",
+    unsafe_allow_html=True
+)
+st.markdown(
+    "<p style='text-align:center;font-size:18px;'>We recomend movies by title, genre or are you ready for a surprise pick </p>",
+    unsafe_allow_html=True
+)
 
-#movie image
-st.markdown("<div style='text-align:center;'>", unsafe_allow_html=True)
-try:
-    image = Image.open("movie.jpg")
-    st.image(image, width=450)
-except:
-    pass
-st.markdown("</div>", unsafe_allow_html=True)
+#MOVIE IMAGE
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    try:
+        st.image(Image.open("movie.jpg"), use_container_width=True)
+    except:
+        pass
+
 st.markdown("---")
 
-#SEARCH BY TITLE OR GENRE
-search_type = st.radio(" Choose search method:", ["Movie Title", "Genre"], horizontal=True)
+#RADIO BUTTON
+search_type = st.radio(
+    "🔍 Choose search method",
+    ["Movie Title", "Genre"],
+    horizontal=True
+)
 
-#RECOMENDATION SLIDER
-num_movies = st.slider("Number of recommendations", min_value=1, max_value=15, value=5)
+#SLIDER
+num_movies = st.slider(
+    "🎯 Number of recommendations",
+    1, 15, 5
+)
+
 st.markdown("---")
 
-#SELECTION
+#SEARCH BY T/G
 if search_type == "Movie Title":
-    selected_movie = st.selectbox("Select a movie", movies['title'].values)
+    selected_movie = st.selectbox(
+        "Select a movie",
+        movies['title'].values
+    )
 
     if st.button("🎬 Get Recommendations"):
         results = recommend_by_movie(selected_movie, num_movies)
-        st.subheader("⭐ Recommended Movies")
-        for movie in results:
-            st.markdown(f"### 🎬 {movie['title']}")
-            st.write(f"**Genres:** {movie['genres']}")
-            st.write(f"**Overview:** {movie['overview']}")
-            st.write(f"**Production Companies:** {movie.get('production_companies','N/A')}")
-            st.write(f"**Release Date:** {movie.get('release_date','N/A')}")
-            st.write(f"**Runtime:** {movie.get('runtime','N/A')} minutes")
-            st.write(f"**Vote Average:** {movie.get('vote_average','N/A')}")
-            st.markdown("---")
+        for _, movie in results.iterrows():
+            movie_card(movie)
 
 else:
-    all_genres = sorted(set(genre.strip() for genres in movies['genres'] for genre in genres.split('|')))
-    selected_genre = st.selectbox("Select a genre", all_genres)
+    all_genres = sorted(
+        set(
+            g.strip()
+            for x in movies['genres']
+            for g in x.split('|')
+        )
+    )
+
+    selected_genre = st.selectbox(
+        "Select genre",
+        all_genres
+    )
 
     if st.button("🎭 Get Recommendations"):
         results = recommend_by_genre(selected_genre, num_movies)
-        st.subheader(f"⭐ Movies in {selected_genre}")
-        for movie in results:
-            st.markdown(f"### 🎬 {movie['title']}")
-            st.write(f"**Genres:** {movie['genres']}")
-            st.write(f"**Overview:** {movie['overview']}")
-            st.write(f"**Production Companies:** {movie.get('production_companies','N/A')}")
-            st.write(f"**Release Date:** {movie.get('release_date','N/A')}")
-            st.write(f"**Runtime:** {movie.get('runtime','N/A')} minutes")
-            st.write(f"**Vote Average:** {movie.get('vote_average','N/A')}")
-            st.markdown("---")
+        for _, movie in results.iterrows():
+            movie_card(movie)
 
 #SURPRISE ME
 st.markdown("---")
 st.subheader("🎲 Surprise Me")
-if st.button("Show Random Recommendations"):
+
+if st.button("Show Random Movies"):
     random_movie = random.choice(movies['title'].values)
     results = recommend_by_movie(random_movie, num_movies)
-    st.subheader(f"🎉 Because you might like: **{random_movie}**")
-    for movie in results:
-        st.markdown(f"### 🎬 {movie['title']}")
-        st.write(f"**Genres:** {movie['genres']}")
-        st.write(f"**Overview:** {movie['overview']}")
-        st.write(f"**Production Companies:** {movie.get('production_companies','N/A')}")
-        st.write(f"**Release Date:** {movie.get('release_date','N/A')}")
-        st.write(f"**Runtime:** {movie.get('runtime','N/A')} minutes")
-        st.write(f"**Average Ratings:** {movie.get('vote_average','N/A')}")
-        st.markdown("---")
+    st.subheader(f"🎉 Because you liked **{random_movie}**")
+    for _, movie in results.iterrows():
+        movie_card(movie)
 
 st.markdown("---")
-st.caption("Built using Streamlit app by vr2048")
+st.caption("Built with Streamlit by VR2048")
